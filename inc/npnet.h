@@ -80,7 +80,7 @@ namespace NPnet {
   /* boost randomness */
   namespace brand = boost::random;
   using randgen = boost::mt19937;
-  static randgen global_gen;
+  static randgen global_rng;
 }
 
 #endif

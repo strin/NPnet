@@ -4,7 +4,7 @@ PROJECT (CIBP-NET)
 set(CMAKE_PREFIX_PATH /opt/local ${CMAKE_PREFIX_PATH}) 
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules) 
 
-find_package(Boost COMPONENTS random python unit_test_framework REQUIRED)
+find_package(Boost COMPONENTS random python REQUIRED)
 message("Include dirs of boost: " ${Boost_INCLUDE_DIRS} )
 message("Libs of boost: " ${Boost_LIBRARIES} )
 
@@ -31,6 +31,8 @@ ELSE()
   MESSAGE(FATAL_ERROR "CMakeLists.txt has not been tested/written for your compiler.")
 ENDIF()
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/usr/include")
+
 file(GLOB TEST_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} test/*.cpp)
 foreach(testSrc ${TEST_SRCS})
         #Extract the filename without an extension (NAME_WE)
@@ -40,7 +42,7 @@ foreach(testSrc ${TEST_SRCS})
         add_executable(${testName} ${testSrc})
 
         #link to Boost libraries AND your targets and dependencies
-        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES})
+        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} armadillo)
 
         #I like to move testing binaries into a testBin directory
         set_target_properties(${testName} PROPERTIES 
@@ -61,5 +63,6 @@ target_link_libraries(cibp
   ${LIBS}
   ${Boost_LIBRARIES}
   ${PYTHON_LIBRARIES}
+  armadillo
 )
 
