@@ -3,6 +3,7 @@ PROJECT (CIBP-NET)
 
 set(CMAKE_PREFIX_PATH /opt/local ${CMAKE_PREFIX_PATH}) 
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules) 
+set(ARMADILLO_LIBRARIES /usr/lib/libarmadillo.dylib)
 
 find_package(Boost COMPONENTS random python REQUIRED)
 message("Include dirs of boost: " ${Boost_INCLUDE_DIRS} )
@@ -11,6 +12,8 @@ message("Libs of boost: " ${Boost_LIBRARIES} )
 find_package(PythonLibs REQUIRED)
 message("Include dirs of Python: " ${PYTHON_INCLUDE_DIRS} )
 message("Libs of Python: " ${PYTHON_LIBRARIES} )
+
+add_subdirectory("src")
 
 include_directories(
   "inc"
@@ -33,6 +36,18 @@ ENDIF()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I/usr/include")
 
+
+ADD_LIBRARY(cibp SHARED
+  src/cibp.cpp
+)
+
+target_link_libraries(cibp
+  ${LIBS}
+  ${Boost_LIBRARIES}
+  ${PYTHON_LIBRARIES}
+  ${ARMADILLO_LIBRARIES}
+)
+
 file(GLOB TEST_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} test/*.cpp)
 foreach(testSrc ${TEST_SRCS})
         #Extract the filename without an extension (NAME_WE)
@@ -42,7 +57,7 @@ foreach(testSrc ${TEST_SRCS})
         add_executable(${testName} ${testSrc})
 
         #link to Boost libraries AND your targets and dependencies
-        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} armadillo)
+        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${ARMADILLO_LIBRARIES} cibp)
 
         #I like to move testing binaries into a testBin directory
         set_target_properties(${testName} PROPERTIES 
@@ -55,14 +70,4 @@ foreach(testSrc ${TEST_SRCS})
                  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test-bin/${testName} )
 endforeach(testSrc)
 
-ADD_EXECUTABLE(cibp
-  main.cpp
-)
-
-target_link_libraries(cibp
-  ${LIBS}
-  ${Boost_LIBRARIES}
-  ${PYTHON_LIBRARIES}
-  armadillo
-)
 

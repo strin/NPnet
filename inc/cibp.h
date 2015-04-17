@@ -6,115 +6,127 @@
 
 namespace NPnet {
 
-    class CIBPnet {
-    public:
-        CIBPnet(const param& p);
+  class CIBPnet {
+  public:
+    /* Initialize the CIBP network with 
+      input:
+        p (param)
+        arch (vec<int>), initial architecture, the first layer should be number of visible nodes.
+      effect: 
+        sets the num_node and depth.
+     */
+    CIBPnet(const param& p, const vec<int>& arch);
 
-        int depth;                         // depth of network.
-        vec<int> num_node;         // number of nodes per layer. 
-        vec<mat> weights;            // weights of the neural network.
-        vec<mat> edges;                // binary edge indicators. 
-        vec<colvec> biases;        // bias vectors.
-        vec<colvec> stds;            // standard deviations of the prior for hidden units.
+    /* disable copy and move constructors */
+    CIBPnet(const CIBPnet& net);
+    CIBPnet(CIBPnet&& net);
 
-        struct Hidden {                // hidden variables.
-            Hidden(const colvec& x, const CIBPnet& net) 
-            :x(x), net(net) {
-                this->u.resize(1);
-                u[0] = x;
-                this->y.resize(1);
-                y[0] = x;
-            }
-            const CIBPnet& net;    // model.
-            const colvec& x;         // input.
-            vec<colvec> u;             // latent representation.
-            vec<colvec> y;             // responses from previous layer.
+    int depth;             // depth of network, number of hidden layers.
+    vec<int> num_node;     // number of nodes per layer. 
+    vec<double> a, b;    // gamma prior for precision.
+    vec<double> mu_w, rho_w, mu_b, rho_b;   // Guassian prior for weights and biases.
+    vec<mat> weights;      // weights of the neural network.
+    vec<mat> edges;        // sparse binary edge lists. 
+    vec<mat> wz;         // effective weights = W .* Z.
+    vec<colvec> biases;    // bias vectors.
+    vec<colvec> stds;      // standard deviations of the prior for hidden units.
 
-            inline int num_layer() const {
-                if(u.size() != y.size()) {
-                    throw "size inconsistent between u and y.";
-                }
-                return u.size();
-            }
+    struct Hidden; 
+    struct Layer;
 
-            void resize(int num_layer, vec<int> num_node) {
-                u.resize(num_layer);
-                y.resize(num_layer);
-                for(size_t i = this->num_layer(); i >= 1; i--) {
-                    int old_size = u[i].size(), 
-                            new_size = num_node[i];
-                    if(new_size > old_size) {
-                         // sample from prior.
-                        if(i == this->num_layer()) {
-                            y[i] = net.gm[i];
-                        }else{
-                            y[i] = net.W[i] * y[i+1] + net.gm[i];
-                        }
-                        u[i] = randn<colvec>(new_size) * net.stds[i] + y[i]; 
-                        u[i] = sigmoid(u[i]);
-                        // TODO: incremental computation.
-                    }
-                }
-            }
-        };
+    /* train the network with given training set */
+    bool train(const vec<colvec>& input, double pass = 1);
 
-        /* train the network with given training set */
-        bool train(const vec<colvec>& input, int num_iter = 10) {
-            size_t num_train = input.size();
-            vec<Hidden> hidden;
-            for(size_t ni = 0; ni < num_train; ni++) {
-                hidden.push_back(Hidden(input[ni], *this));
-            }
+    /* sampling */
+    void sample_hidden(Hidden& hidden);
 
-            // Gibbs sampling.
-            for(int it = 0; it < num_iter; it++) {
-                for(auto& h : hidden) {
-                    sample_hidden(h);
-                }
-                sample_weights(hidden);
-                sample_biases(hidden);
-                sample_types(hidden);
-                sample_structure(hidden);
-            }
-            return true;
-        }
+    void sample_weights(const vec<Hidden>& hidden);
 
-        /* sampling */
-        void sample_hidden(Hidden& hidden) {
-            // resize the hidden units based on network structure.
-            hidden.resize(this->depth, this->num_node);
-            // sample hidden units. 
-            // TODO: order of sampling.
+    void sample_biases(const vec<Hidden>& hidden);
 
-        }
+    void sample_types(const vec<Hidden>& hidden);
 
-        void sample_weights(const vec<Hidden>& hidden) {
-                
-        }
+    void sample_structure(const vec<Hidden>& hidden);
 
-        void sample_biases(const vec<Hidden>& hidden) {
 
-        }
+  private:
+    /* short notations for variables */
+    int& M = this->depth;
+    vec<int>& K = this->num_node;
+    vec<mat>& W = this->weights;
+    vec<mat>& Z = this->edges;
+    vec<colvec>& gm = this->biases;
+  };
 
-        void sample_types(const vec<Hidden>& hidden) {
+  /* Warning: do not move / copy Layer objects 
+   * as Layer contains reference to its own member variables 
+   * using a copy of the object might lead to unexpected behavior
+   */
+  struct CIBPnet::Layer {     // one hidden layer.
 
-        }
+    Layer(const size_t size, size_t id, const Hidden& hidden);
+    Layer(const colvec& x, const Hidden& hidden);
 
-        void sample_structure(const vec<Hidden>& hidden) {
+    // copy and move constructors disabled.
+    Layer(const Layer& another_layer);
+    Layer(Layer&& another_layer);
 
-        }
+    // get size of layer.
+    inline size_t size() const {
+      if(u.size() != y.size()) {
+        std::cout << u << std::endl;
+        std::cout << v << std::endl;
+        std::cout << y << std::endl;
+        throw "size inconsistent between u, y or v";
+      }
+      return u.size();
+    }
 
-    private:
-        /* short notations for variables */
-        int& M = this->depth;
-        vec<int>& K = this->num_node;
-        vec<mat>& W = this->weights;
-        vec<mat>& Z = this->edges;
-        vec<colvec>& gm = this->biases;
+    // get std.
+    inline colvec get_std() const {
+      colvec std = sqrt(1/this->v);
+      return std;
+    }
 
-        /* Metroplis Hasting sampler */
-        
-    };
-}
+    // activate and compute y.
+    void activate();
+
+    // sample latent representation. 
+    void sample(size_t iter);
+
+    // sample from prior. 
+    void sample_prior();
+
+    // resize layer.
+    void resize(size_t num_node);
+
+    colvec u;     // latent representation.
+    colvec y;     // response from previous layer.
+    const colvec& v;     // precision of nodes.
+    size_t id;     // pointer previous layer.
+
+    const Hidden& hidden;
+    const CIBPnet& net;
+
+    LikelihoodFunc lhood;
+    ProposalFunc propose;
+    ProposalLikelihoodFunc proposal_lhood;
+    ptr<MetroplisHasting> mh;
+  };
+
+  struct CIBPnet::Hidden {        // hidden variables.
+    Hidden(const colvec& x, const CIBPnet& net);
+
+    const CIBPnet& net;  // model.
+    const colvec& x;     // input.
+    vec<ptr<Layer>> layer;    // hidden layers.
+
+    inline int num_layer() const;
+
+    void resize(vec<int> num_node);
+  };
+
+}   
+
 
 #endif
