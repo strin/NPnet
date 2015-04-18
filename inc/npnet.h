@@ -12,9 +12,11 @@
 #include <random>
 #include <unordered_map>
 #include <armadillo>
-
+#include "matio.h"
 
 namespace arma {
+
+    /* extension on randomness */
     template<>
     double randn<double>() 
     {
@@ -48,6 +50,71 @@ namespace arma {
         return res;
     }
 
+    /* io with mat files */
+    std::unordered_map<std::string, boost::any> 
+    loadmat(std::string path) 
+    {
+        mat_t* matfp;
+        matvar_t* matvar;
+        matfp = Mat_Open(path.c_str(),MAT_ACC_RDONLY);
+        std::unordered_map<std::string, boost::any> res;
+
+        if(matfp == nullptr) 
+            return res;
+
+         while((matvar = Mat_VarReadNextInfo(matfp)) != nullptr) 
+         {
+            std::string name(matvar->name);
+            if(matvar->data_type == MAT_T_CELL) 
+            {
+                throw "cell type not supported";
+            }
+            else
+            {
+                if(matvar->class_type == MAT_C_DOUBLE 
+                   and (matvar->rank == 2))
+                {
+                    int start[2] = {0, 0};
+                    int stride[2] = {1, 1};
+                    const int& n0 = matvar->dims[0];
+                    const int& n1 = matvar->dims[1];
+                    int edge[2] = {n0, n1};
+                    static std::vector<double> x(n0 * n1);
+                    Mat_VarReadData(matfp, matvar, &x[0], start, stride, edge);
+                    mat x2(x);
+                    x2.reshape(n0, n1);
+                    res[name] = x2;
+                }
+                else if(matvar->class_type == MAT_C_DOUBLE
+                        and matvar->rank == 3) 
+                {
+                    int start[3] = {0, 0, 0};
+                    int stride[3] = {1, 1, 1};
+                    const int& n0 = matvar->dims[0];
+                    const int& n1 = matvar->dims[1];
+                    const int& n2 = matvar->dims[2];
+                    int edge[3] = {n0, n1, n2};
+                    static std::vector<double> x(n0 * n1 * n2);
+                    Mat_VarReadData(matfp, matvar, &x[0], start, stride, edge);
+                    cube x3(n1, n2, n0);
+                    for(int i = 0; i < n0; i++) {
+                        for(int j = 0; j < n1; j++) {
+                            for(int k = 0; k < n2; k++) {
+                                x3(j, k, i) = x[k * n0 * n1 + j * n0 + i];
+                            }
+                        }
+                    }
+                    res[name] = x3;
+                }
+                else
+                {
+                    throw "unknow type in mat"; 
+                }
+            }
+            Mat_VarFree(matvar);
+         }
+         return res;
+    }
 }
 
 namespace NPnet 
@@ -65,8 +132,6 @@ namespace NPnet
     using ptr = std::shared_ptr<T>;
 
     using any = boost::any;
-
-    using namespace arma;
 
     template<class T, class... Args>
     ptr<T> make_shared(Args&&... args) 
@@ -89,6 +154,8 @@ namespace NPnet
     T extract(Args&&... args) {
         return boost::python::extract<T>(args...);
     }
+
+    using namespace arma;
 
     /* boost python */
     namespace bpy = boost::python;

@@ -4,6 +4,8 @@ PROJECT (CIBP-NET)
 set(CMAKE_PREFIX_PATH /opt/local ${CMAKE_PREFIX_PATH}) 
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules) 
 set(ARMADILLO_LIBRARIES /usr/lib/libarmadillo.dylib)
+set(MATIO_LIBRARIES /usr/local/lib/libmatio.dylib)
+set(ZMQ_LIBRARIES /usr/local/lib/libzmq.dylib)
 
 find_package(Boost COMPONENTS random python REQUIRED)
 message("Include dirs of boost: " ${Boost_INCLUDE_DIRS} )
@@ -46,6 +48,8 @@ target_link_libraries(cibp
   ${Boost_LIBRARIES}
   ${PYTHON_LIBRARIES}
   ${ARMADILLO_LIBRARIES}
+  z
+  ${MATIO_LIBRARIES}
 )
 
 file(GLOB TEST_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} test/*.cpp)
@@ -57,7 +61,7 @@ foreach(testSrc ${TEST_SRCS})
         add_executable(${testName} ${testSrc})
 
         #link to Boost libraries AND your targets and dependencies
-        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${ARMADILLO_LIBRARIES} cibp)
+        target_link_libraries(${testName} ${Boost_LIBRARIES} ${PYTHON_LIBRARIES} ${ARMADILLO_LIBRARIES} z ${MATIO_LIBRARIES} cibp)
 
         #I like to move testing binaries into a testBin directory
         set_target_properties(${testName} PROPERTIES 

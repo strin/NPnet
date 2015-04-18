@@ -127,3 +127,16 @@ BOOST_AUTO_TEST_CASE(test_cibp_net_sample_hidden_toy)
   cout << "mean " << mean << endl;
   BOOST_CHECK(fabs(mean-0.551222) < 1e-4);
 }
+
+BOOST_AUTO_TEST_CASE(test_arma_load_mat) 
+{
+  auto res = loadmat("data/test_mat_load.mat");
+  for(auto item : res) {
+    cout << "key: " << item.first << endl;
+    if(item.first == "data") {
+      cout << boost::any_cast<cube>(item.second) << endl;
+    }else{
+      cout << boost::any_cast<mat>(item.second) << endl;
+    }
+  }
+}
