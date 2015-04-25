@@ -32,3 +32,6 @@ CMakeScripts
 Debug
 *.cmake
 Makefile
+
+# idea
+*.idea*
