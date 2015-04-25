@@ -1,6 +1,8 @@
 from cibp import *
 import scipy.io as sio
 import pdb, traceback, sys
+import matplotlib.pyplot as plt
+import numpy.random as npr
 
 def make_mnist_small(path, num_per_cat):
     data = sio.loadmat(path)
@@ -61,7 +63,8 @@ if __name__ == "__main__":
         nv = train_data.shape[1]
         net = CIBPnet(alpha=lambda l: 10, beta=lambda l: 1, nv=nv)
         normalize_data(train_data)
-        net.train(train_data, num_iter=10)
+        ind = npr.choice(range(train_data.shape[0]), 32, replace=False)
+        net.train(train_data, num_iter=10, valids=ind)
     except:
         type, value, tb = sys.exc_info()
         traceback.print_exc()

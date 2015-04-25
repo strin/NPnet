@@ -26,3 +26,27 @@ class BasicMH(object):
 
     def acc_rate(self):
         return float(self.num_acc) / self.num_sample
+
+
+class PriorMH(object):
+    "propose from prior"
+    def __init__(self, propose, lhood):
+        self.propose = propose
+        self.lhood = lhood
+        self.num_sample = 0
+        self.num_acc = 0
+
+    def sample(self, x):
+        old_x = x
+        x = self.propose(old_x)
+        score = min(0, self.lhood(x) - self.lhood(old_x))
+        coin = npr.rand()
+        self.num_sample += 1
+        if np.log(coin) < score:
+            self.num_acc += 1
+            return x
+        else:
+            return old_x
+
+    def acc_rate(self):
+        return float(self.num_acc) / self.num_sample

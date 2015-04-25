@@ -28,7 +28,7 @@ def tile(W, height, width, nh, nw):
         for j in range(nw):
             if i * nw + j >= W.shape[1]:
                 break
-            img[i*height:(i+1)*height, j*width:(j+1)*width] = W[:, j * nh + i].reshape(height, width)
+            img[i*height:(i+1)*height, j*width:(j+1)*width] = W[:, i * nw + j].reshape(height, width, order='F')
     return img
 
 
@@ -95,9 +95,11 @@ class CIBPlayer(object):
                     self.y[i] += np.dot(W[i, :] * Z[i, :], u)
                 self.iu[i] = npr.randn() * np.sqrt(1.0/v[i]) + self.y[i]
                 self.u[i] = sigmoid1(self.iu[i])
-                self.mh.append(BasicMH(partial(self.propose, node=i),
-                                     partial(self.lhood, node=i),
-                                     lambda x, old_x: self.proposal_lhood(x, node=i)))
+                # self.mh.append(BasicMH(partial(self.propose, node=i),
+                #                      partial(self.lhood, node=i),
+                #                      lambda x, old_x: self.proposal_lhood(x, node=i)))
+                self.mh.append(PriorMH(partial(self.propose, node=i),
+                                        partial(self.lhood, node=i)))
         else:
             self.mh = self.mh[:num_node]
         self.size = num_node
@@ -212,8 +214,8 @@ class CIBPhidden(object):
 class CIBPnet(object):
     def __init__(self, **param):
         assert(isinstance(param, dict))
-        self.a = param["a"] if "a" in param else lambda layer: 1
-        self.b = param["b"] if "b" in param else lambda layer: 1
+        self.a = param["a"] if "a" in param else lambda layer: 100
+        self.b = param["b"] if "b" in param else lambda layer: 100
         self.alpha = param["alpha"] if "alpha" in param else lambda layer: 1
         self.beta = param["beta"] if "beta" in param else lambda layer: 5
         self.mu_w = param["mu_w"] if "mu_w" in param else lambda layer: 0
@@ -305,6 +307,7 @@ class CIBPnet(object):
 
     def sample_hiddens(sef, hiddens):
         lhood = []
+        assert(len(list(hiddens)) == len(set(hiddens)))     # no duplicates.
         for hidden in hiddens:
             hidden.sample()
             lhood.append(hidden.lhood())
@@ -322,6 +325,7 @@ class CIBPnet(object):
 
     def sample_weights(self, hiddens):
         arch = self.arch
+        factor = float(self.N) / float(len(hiddens))
         for l in range(1, len(arch)):
             W = self.Ws[l]
             Z = self.Zs[l]
@@ -338,17 +342,17 @@ class CIBPnet(object):
                     u = hidden.layers[l].u
                     A += u[kp] * (prev_iu - prev_y + WZ[:, kp] * u[kp])
                     B += u[kp]**2
-                A *= self.vs[l-1]
-                B *= self.vs[l-1]
+                A *= self.vs[l-1] * factor
+                B *= self.vs[l-1] * factor
                 rho_w_post = rho_w + B
                 std_w_post = np.sqrt(1.0/rho_w_post)
                 mu_w_post = (rho_w * mu_w + A) / rho_w_post
                 W[:, kp] = npr.randn(arch[l-1]) * std_w_post + mu_w_post
-        self.activate_hidden(hiddens)
+        # self.activate_hidden(hiddens)
 
     def sample_biases(self, hiddens):
-        N = len(hiddens)
         arch = self.arch
+        factor = float(self.N) / float(len(hiddens))
         for l in range(len(arch)):
             W = self.Ws[l]
             gamma = self.gammas[l]
@@ -360,8 +364,8 @@ class CIBPnet(object):
                 iu = hidden.layers[l].iu
                 y = hidden.layers[l].y
                 A += iu - y + gamma
-            A *= v
-            rho_gamma_post = rho_gamma + N * v
+            A *= v * factor
+            rho_gamma_post = rho_gamma + float(self.N) * v
             std_b_post = np.sqrt(1.0/rho_gamma_post)
             mu_gamma_post = (rho_gamma * mu_gamma + A) / rho_gamma_post
             gamma[:] = npr.randn(arch[l]) * std_b_post + mu_gamma_post
@@ -370,6 +374,7 @@ class CIBPnet(object):
     def sample_activation_variance(self, hiddens):
         N = len(hiddens)
         arch = self.arch
+        factor = float(self.N) / float(len(hiddens))
         for l in range(len(arch)):
             v = self.vs[l]
             A = np.zeros(arch[l])
@@ -377,12 +382,14 @@ class CIBPnet(object):
                 iu = hidden.layers[l].iu
                 y = hidden.layers[l].y
                 A += (iu - y)**2
-            a_post = np.ones(arch[l]) * self.a(l) + .5 * N
+            A *= factor
+            a_post = np.ones(arch[l]) * self.a(l) + .5 * float(self.N)
             b_post = self.b(l) + A * .5
             v[:] = np.array(map(npr.gamma, a_post, 1.0/b_post))
 
     def sample_structure(self, hiddens):
         arch = self.arch
+        factor = float(self.N) / float(len(hiddens))
         for l in range(len(self.arch)-1):
             ln = l+1
             Z = self.Zs[ln]
@@ -404,26 +411,50 @@ class CIBPnet(object):
                     else:
                         # Phase I. Adding edges to non-singletons.
                         M = arch[l] + self.beta(l) - 1
-                        lhood0 = np.log(eta) - np.log(M)
-                        lhood1 = np.log(M-eta) - np.log(M)
+                        lhood0 = 0
+                        lhood1 = 0
                         for hidden in hiddens:
                             next_u = hidden.layers[ln].u
+                            # begin - check y consistency.
+                            # old_y = np.array(hidden.layers[l].y)
+                            # hidden.layers[l].activate()
+                            # y = hidden.layers[l].y
+                            # assert((old_y == y).all())
+                            # end - check y consistency.
                             y = hidden.layers[l].y
                             baseline0 = y[k]
                             baseline0 -= WZ[k, kp] * next_u[kp]     # Z = 0.
                             baseline1 = baseline0 + W[k, kp] * next_u[kp]    # Z = 1.
                             lhood0 += hidden.layers[l].proposal_lhood_y(baseline0, k)
                             lhood1 += hidden.layers[l].proposal_lhood_y(baseline1, k)
+                        lhood0 *= factor
+                        lhood1 *= factor
+                        lhood0 += np.log(eta) - np.log(M)
+                        lhood1 += np.log(M-eta) - np.log(M)
                         max_lhood = max(lhood0, lhood1)
                         lhood0 = lhood0 - max_lhood
                         lhood1 = lhood1 - max_lhood
                         prob = np.exp(lhood1) / (np.exp(lhood0) + np.exp(lhood1))
+                        old_wz = WZ[k, kp]
                         if npr.rand() < prob:
-                            Z[k, kp] = 1
+                            Z[k, kp] = 1.0
+                            WZ[k, kp] = W[k, kp]
                         else:
-                            Z[k, kp] = 0
+                            Z[k, kp] = 0.0
+                            WZ[k, kp] = 0.0
+                        for hidden in hiddens:
+                            next_u = hidden.layers[ln].u
+                            hidden.layers[l].y[k] -= old_wz * next_u[kp]
+                            hidden.layers[l].y[k] += WZ[k, kp] * next_u[kp]
+                            # begin - check y consistency.
+                            # old_y = np.array(hidden.layers[l].y[k])
+                            # hidden.layers[l].activate()
+                            # y = np.array(hidden.layers[l].y[k])
+                            # assert((np.abs(consistency - y) < 1e-4).all())
+                            # end - check y correctness.
 
                 continue
+                
                 # Phase II. remove or add singleton parents.
                 Ko = len(singleton)
                 if npr.rand() < .5:     # birth.
@@ -451,6 +482,8 @@ class CIBPnet(object):
                         for hidden in hiddens:
                             hidden.resize(old_arch)
                         self.check_shapes()
+                    else:
+                        print 'new arch', self.arch
                 elif Ko > 0:   # death.
                     ind = npr.choice(Ko)
                     lhood = 2 * np.log(Ko) + np.log(self.beta(l) + self.arch[l] - 1) \
@@ -475,22 +508,31 @@ class CIBPnet(object):
             assert(self.gammas[l].shape[0] == self.arch[l])
             assert(self.vs[l].shape[0] == self.arch[l])
 
-    def train(self, examples, num_iter):
+    def train(self, examples, num_iter, valids=[]):
         hiddens = []
         print 'arch = ', self.arch
         for ex in examples:
             hidden = CIBPhidden(self, ex)
             hiddens.append(hidden)
+        train_h = [h for (hi, h) in enumerate(hiddens) if hi not in valids]
+        valid_h = [h for (hi, h) in enumerate(hiddens) if hi in valids]
+
+        self.N = len(train_h)
+        bsize = 32
         for it in range(num_iter):
+            minibatch = npr.choice(train_h, bsize, replace=False)
             print >> stdout, 'iter = ', it
             stdout.flush()
-            lhood = self.sample_hiddens(hiddens)
+            lhood = self.sample_hiddens(minibatch)
+            # if valids is not []:
+                # lhood = self.sample_hiddens(valid_h)
             print >> stdout, '... lhood = ', lhood
-            print >> stdout, '... accept = ', self.acc_rate_hiddens(hiddens)
-            self.sample_weights(hiddens)
-            self.sample_biases(hiddens)
-            self.sample_activation_variance(hiddens)
-            # self.sample_structure(hiddens)
+            print >> stdout, '... accept = ', self.acc_rate_hiddens(minibatch)
+
+            self.sample_weights(minibatch)
+            self.sample_biases(minibatch)
+            self.sample_activation_variance(minibatch)
+            self.sample_structure(minibatch)
         plt.imshow(tile(self.Ws[1], 28, 28, 10, 10), cmap=cm.Greys_r)
         plt.show()
             
